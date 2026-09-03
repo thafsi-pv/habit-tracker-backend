@@ -56,7 +56,7 @@ async function bootstrap() {
   app.useGlobalFilters(new HttpExceptionFilter());
 
   // 1. Use the environment PORT provided by the platform, fallback to 3000 locally
-  const port = process.env.PORT || 3000;
+  const port = parseInt(process.env.PORT || '3000', 10);
 
   // 2. Explicitly bind to '0.0.0.0' so the platform can detect it
   await app.listen(port, '0.0.0.0');

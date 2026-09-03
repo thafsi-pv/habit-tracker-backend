@@ -14,7 +14,7 @@ import { DailyHabitsModule } from './daily-habits/daily-habits.module';
 import { DashboardModule } from './dashboard/dashboard.module';
 import { ProgressModule } from './progress/progress.module';
 import { InvitationsModule } from './invitations/invitations.module';
-// import { WhatsAppModule } from './whatsapp/whatsapp.module';
+import { WhatsAppModule } from './whatsapp/whatsapp.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { SchedulerModule } from './scheduler/scheduler.module';
 
@@ -38,9 +38,9 @@ import { SchedulerModule } from './scheduler/scheduler.module';
     DashboardModule,
     ProgressModule,
     InvitationsModule,
-    // WhatsAppModule, // never remove
+    WhatsAppModule,
     NotificationsModule,
-    // SchedulerModule, // never remove
+    SchedulerModule,
   ],
   providers: [/* { provide: APP_GUARD, useClass: ThrottlerGuard } */],
 })

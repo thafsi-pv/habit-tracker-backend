@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { NotificationChannel, NotificationType } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-// import { WhatsAppService } from '../whatsapp/whatsapp.service';
+import { WhatsAppService } from '../whatsapp/whatsapp.service';
 import { DashboardService } from '../dashboard/dashboard.service';
 import { ProgressService } from '../progress/progress.service';
 import { ReportCardService } from './report-card.service';
@@ -112,7 +112,7 @@ export class NotificationsService {
 
   constructor(
     private prisma: PrismaService,
-    // private whatsappService: WhatsAppService,
+    private whatsappService: WhatsAppService,
     private dashboardService: DashboardService,
     private progressService: ProgressService,
     private reportCardService: ReportCardService,
@@ -214,15 +214,12 @@ export class NotificationsService {
           },
         });
 
-        /*
         const result = await this.whatsappService.sendImageToNumber(
           senderId,
           user.whatsappNumber,
           image,
           caption,
         );
-        */
-        const result = { success: false, error: 'WhatsApp is temporarily paused' };
 
         await this.prisma.notificationLog.update({
           where: { id: log.id },

@@ -6,7 +6,11 @@ import { HealthController } from './health.controller';
 @Global()
 @Module({
   controllers: [HealthController],
-  providers: [AuthorizationService, TrackerMemberGuard],
-  exports: [AuthorizationService, TrackerMemberGuard],
+  providers: [
+    // AuthorizationService, TrackerMemberGuard
+  ],
+  exports: [
+    // AuthorizationService, TrackerMemberGuard
+  ],
 })
 export class CommonModule {}

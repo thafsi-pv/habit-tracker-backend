@@ -26,7 +26,7 @@ import { SchedulerModule } from './scheduler/scheduler.module';
       throttlers: [{ ttl: 60_000, limit: 100 }], // generous global default; auth routes tighten this further
     }),
     */
-    PrismaModule,
+    // PrismaModule,
     CommonModule,
     // AuthModule,
     // UsersModule,

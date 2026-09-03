@@ -40,7 +40,7 @@ import { SchedulerModule } from './scheduler/scheduler.module';
     InvitationsModule,
     // WhatsAppModule,
     NotificationsModule,
-    SchedulerModule,
+    // SchedulerModule, // never remove
   ],
   providers: [/* { provide: APP_GUARD, useClass: ThrottlerGuard } */],
 })

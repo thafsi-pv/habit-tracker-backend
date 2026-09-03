@@ -1,0 +1,226 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+enum TrackerRole {
+  MASTER
+  MEMBER
+}
+
+enum NotificationType {
+  DAILY_REPORT
+  INVITATION
+}
+
+enum NotificationChannel {
+  WHATSAPP
+  EMAIL
+}
+
+enum NotificationStatus {
+  PENDING
+  SENT
+  FAILED
+}
+
+model User {
+  id           String   @id @default(cuid())
+  name         String
+  email        String   @unique
+  passwordHash String? // nullable for Google-only accounts
+  googleId     String?  @unique
+  avatarUrl    String?
+  timezone     String   @default("UTC")
+  // WhatsApp notification preferences
+  whatsappNumber        String?
+  notificationTime      String?  @default("20:00") // HH:mm in user's timezone
+  notificationsEnabled  Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  ownedTrackers     Tracker[]           @relation("TrackerOwner")
+  memberships       TrackerMember[]
+  dailyHabits       DailyHabit[]
+  dailySubtasks     DailySubtaskCompletion[]
+  invitationsSent   Invitation[]        @relation("InvitedBy")
+  notificationLogs  NotificationLog[]
+  refreshTokens     RefreshToken[]
+  whatsappSession   WhatsAppSession?
+
+  @@index([email])
+}
+
+model RefreshToken {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
+
+model Tracker {
+  id        String   @id @default(cuid())
+  name      String
+  ownerId   String
+  owner     User     @relation("TrackerOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  members     TrackerMember[]
+  habits      Habit[]
+  invitations Invitation[]
+  notificationLogs NotificationLog[]
+
+  @@index([ownerId])
+}
+
+model TrackerMember {
+  id        String      @id @default(cuid())
+  trackerId String
+  tracker   Tracker     @relation(fields: [trackerId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role      TrackerRole @default(MEMBER)
+  joinedAt  DateTime    @default(now())
+
+  @@unique([trackerId, userId])
+  @@index([userId])
+  @@index([trackerId])
+}
+
+model Habit {
+  id        String   @id @default(cuid())
+  trackerId String
+  tracker   Tracker  @relation(fields: [trackerId], references: [id], onDelete: Cascade)
+  name      String
+  icon      String?
+  sortOrder Int      @default(0)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  subtasks    HabitSubtask[]
+  dailyHabits DailyHabit[]
+
+  @@index([trackerId])
+}
+
+model HabitSubtask {
+  id        String   @id @default(cuid())
+  habitId   String
+  habit     Habit    @relation(fields: [habitId], references: [id], onDelete: Cascade)
+  name      String
+  sortOrder Int      @default(0)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  completions DailySubtaskCompletion[]
+
+  @@index([habitId])
+}
+
+// One row per user per habit per calendar day (in the user's timezone)
+model DailyHabit {
+  id          String    @id @default(cuid())
+  habitId     String
+  habit       Habit     @relation(fields: [habitId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  date        DateTime  @db.Date
+  completed   Boolean   @default(false)
+  completedAt DateTime?
+
+  @@unique([habitId, userId, date])
+  @@index([userId, date])
+  @@index([habitId])
+}
+
+// One row per user per subtask per calendar day
+model DailySubtaskCompletion {
+  id          String       @id @default(cuid())
+  subtaskId   String
+  subtask     HabitSubtask @relation(fields: [subtaskId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  date        DateTime     @db.Date
+  completed   Boolean      @default(false)
+  completedAt DateTime?
+
+  @@unique([subtaskId, userId, date])
+  @@index([userId, date])
+  @@index([subtaskId])
+}
+
+model Invitation {
+  id          String    @id @default(cuid())
+  trackerId   String
+  tracker     Tracker   @relation(fields: [trackerId], references: [id], onDelete: Cascade)
+  email       String
+  invitedById String
+  invitedBy   User      @relation("InvitedBy", fields: [invitedById], references: [id], onDelete: Cascade)
+  tokenHash   String    @unique
+  expiresAt   DateTime
+  acceptedAt  DateTime?
+  createdAt   DateTime  @default(now())
+
+  @@index([trackerId])
+  @@index([email])
+}
+
+model NotificationLog {
+  id        String               @id @default(cuid())
+  userId    String
+  user      User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  trackerId String?
+  tracker   Tracker?             @relation(fields: [trackerId], references: [id], onDelete: SetNull)
+  type      NotificationType
+  channel   NotificationChannel
+  status    NotificationStatus   @default(PENDING)
+  message   String
+  sentAt    DateTime?
+  error     String?
+  createdAt DateTime             @default(now())
+
+  @@index([userId])
+  @@index([status])
+}
+
+// Persists Baileys multi-file auth state as key/value blobs so the
+// WhatsApp session survives container/backend restarts.
+model WhatsAppSession {
+  id           String   @id @default(cuid())
+  userId       String   @unique
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // encrypted JSON blob of the full Baileys auth-state credentials
+  credsData    String?
+  status       String   @default("DISCONNECTED") // DISCONNECTED | CONNECTING | CONNECTED
+  phoneNumber  String?
+  updatedAt    DateTime @updatedAt
+  createdAt    DateTime @default(now())
+}
+
+// Individual Baileys signal-key entries (app-state, pre-keys, sessions, etc.)
+// Baileys' auth-state needs many small key/value records; we key them by
+// (userId, category, keyId) rather than cramming into one JSON blob.
+model WhatsAppSessionKey {
+  id        String   @id @default(cuid())
+  userId    String
+  category  String
+  keyId     String
+  data      String
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, category, keyId])
+  @@index([userId, category])
+}

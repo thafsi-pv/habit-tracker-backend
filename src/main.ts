@@ -55,14 +55,13 @@ async function bootstrap() {
 
   app.useGlobalFilters(new HttpExceptionFilter());
 
-  // Render automatically sets PORT=10000; locally .env has PORT=3000.
-  // Just read whatever PORT is set to, falling back to 3000 for local dev.
-  const port = Number(process.env.PORT) || 3000;
+  // 1. Use the environment PORT provided by the platform, fallback to 3000 locally
+  const port = process.env.PORT || 3000;
 
-  // Bind explicitly to 0.0.0.0 so Render's external port scanner can detect it
+  // 2. Explicitly bind to '0.0.0.0' so the platform can detect it
   await app.listen(port, '0.0.0.0');
-
-  console.log(`API listening on ${port}`);
+  
+  console.log(`Application is running on: ${await app.getUrl()}`);
   console.log(`CORS allowed origins: ${allowedOrigins.join(', ')}`);
 }
 

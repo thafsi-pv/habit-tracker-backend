@@ -5,13 +5,13 @@ import { AppModule } from './app.module';
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
-  // Enable CORS for frontend
+  // Enable CORS for frontend dev server
   app.enableCors({
     origin: true,
     credentials: true,
   });
 
-  // Global validation pipe
+  // Global validation pipe — strips unknown fields, uses class-validator
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,
@@ -20,9 +20,9 @@ async function bootstrap() {
     }),
   );
 
-  const port = parseInt(process.env.PORT || '3000', 10);
-  await app.listen(port, '0.0.0.0');
-  console.log(`🚀 Habit Tracker API running on port ${port}`);
+  const port = process.env.PORT ?? 3000;
+  await app.listen(port);
+  console.log(`🚀 Habit Tracker API running on http://localhost:${port}`);
 }
 
 bootstrap();

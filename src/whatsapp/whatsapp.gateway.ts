@@ -16,7 +16,7 @@ import { WhatsAppStatus } from './whatsapp-provider.interface';
  * userId, so status pushes can never leak to another user.
  */
 @Injectable()
-@WebSocketGateway({ namespace: '/whatsapp', cors: { origin: process.env.APP_URL, credentials: true } })
+@WebSocketGateway({ namespace: '/whatsapp', cors: { origin: true, credentials: true } })
 export class WhatsAppGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @WebSocketServer() server!: Server;
   private readonly logger = new Logger(WhatsAppGateway.name);

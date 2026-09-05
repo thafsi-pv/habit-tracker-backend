@@ -241,6 +241,63 @@ const SVGS = {
       ],
     },
   }),
+  water: (size = 24, color = '#0EA5E9') => ({
+    type: 'svg',
+    props: {
+      width: size,
+      height: size,
+      viewBox: '0 0 24 24',
+      children: [
+        { type: 'path', props: { d: 'M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z', fill: color } },
+      ],
+    },
+  }),
+  code: (size = 24, color = '#059669') => ({
+    type: 'svg',
+    props: {
+      width: size,
+      height: size,
+      viewBox: '0 0 24 24',
+      children: [
+        { type: 'path', props: { d: 'M16 18l6-6-6-6M8 6l-6 6 6 6', stroke: color, strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round', fill: 'none' } },
+      ],
+    },
+  }),
+  heart: (size = 24, color = '#E11D48') => ({
+    type: 'svg',
+    props: {
+      width: size,
+      height: size,
+      viewBox: '0 0 24 24',
+      children: [
+        { type: 'path', props: { d: 'M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z', fill: color } },
+      ],
+    },
+  }),
+  meditation: (size = 24, color = '#F59E0B') => ({
+    type: 'svg',
+    props: {
+      width: size,
+      height: size,
+      viewBox: '0 0 24 24',
+      children: [
+        { type: 'circle', props: { cx: 12, cy: 5, r: 2.5, fill: color } },
+        { type: 'path', props: { d: 'M12 9v4M9 20l3-5 3 5M6 15l6-2 6 2', stroke: color, strokeWidth: 2, strokeLinecap: 'round', fill: 'none' } },
+      ],
+    },
+  }),
+  fallback: (size = 24, color = '#64748B') => ({
+    type: 'svg',
+    props: {
+      width: size,
+      height: size,
+      viewBox: '0 0 24 24',
+      children: [
+        { type: 'rect', props: { x: 3, y: 3, width: 18, height: 18, rx: 4, fill: '#F1F5F9', stroke: '#94A3B8', strokeWidth: 2 } },
+        { type: 'path', props: { d: 'M7 8h10M7 12h10M7 16h6', stroke: color, strokeWidth: 2, strokeLinecap: 'round' } },
+      ],
+    },
+  }),
 };
 
 interface SubtaskRow {
@@ -480,16 +537,40 @@ export class ReportCardService {
         ? `${completedSubCount}/${subtasks.length}`
         : done ? '1/1' : '0/1';
 
-      let iconNode: unknown = null;
-      if (habit.name.toLowerCase().includes('read') || habit.name.toLowerCase().includes('skill')) {
-        iconNode = SVGS.book(26, '#6366F1');
-      } else if (habit.name.toLowerCase().includes('exercise') || habit.name.toLowerCase().includes('walk') || habit.name.toLowerCase().includes('run')) {
-        iconNode = SVGS.runner(26, '#10B981');
-      } else if (habit.name.toLowerCase().includes('english') || habit.name.toLowerCase().includes('practice') || habit.name.toLowerCase().includes('chat')) {
-        iconNode = SVGS.chat(26, '#8B5CF6');
-      } else {
-        iconNode = SVGS.book(26, '#EC4899');
-      }
+      const resolveHabitIcon = (hRow: HabitRow) => {
+        const iconStr = (hRow.icon || '').trim().toLowerCase();
+        const nameStr = (hRow.name || '').toLowerCase();
+
+        if (iconStr === 'book' || iconStr === '📖' || iconStr === '📚' || iconStr === '📕' || nameStr.includes('read') || nameStr.includes('book')) {
+          return SVGS.book(26, '#6366F1');
+        }
+        if (iconStr === 'exercise' || iconStr === 'run' || iconStr === '🏃' || iconStr === '🏋️' || iconStr === '🚴' || nameStr.includes('exercise') || nameStr.includes('run') || nameStr.includes('walk') || nameStr.includes('gym')) {
+          return SVGS.runner(26, '#10B981');
+        }
+        if (iconStr === 'english' || iconStr === 'chat' || iconStr === '💬' || iconStr === '🗣️' || nameStr.includes('english') || nameStr.includes('chat') || nameStr.includes('practice')) {
+          return SVGS.chat(26, '#8B5CF6');
+        }
+        if (iconStr === 'water' || iconStr === '💧' || iconStr === '🥤' || nameStr.includes('water') || nameStr.includes('drink')) {
+          return SVGS.water(26, '#0EA5E9');
+        }
+        if (iconStr === 'code' || iconStr === '💻' || nameStr.includes('code') || nameStr.includes('dev') || nameStr.includes('program')) {
+          return SVGS.code(26, '#059669');
+        }
+        if (iconStr === 'heart' || iconStr === '❤️' || iconStr === '💖' || nameStr.includes('heart') || nameStr.includes('health')) {
+          return SVGS.heart(26, '#E11D48');
+        }
+        if (iconStr === 'pray' || iconStr === 'prayer' || iconStr === 'meditation' || iconStr === '🙏' || iconStr === '🧘' || nameStr.includes('pray') || nameStr.includes('meditat') || nameStr.includes('ദർബ')) {
+          return SVGS.meditation(26, '#F59E0B');
+        }
+        if (iconStr === 'study' || iconStr === 'skill' || nameStr.includes('skill') || nameStr.includes('study') || nameStr.includes('learn')) {
+          return SVGS.book(26, '#EC4899');
+        }
+
+        // Fallback default icon from assets
+        return SVGS.fallback(26, '#64748B');
+      };
+
+      const iconNode = resolveHabitIcon(habit);
 
       const mainRow = h('div', {
         style: {

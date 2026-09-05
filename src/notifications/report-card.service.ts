@@ -171,6 +171,17 @@ const SVGS = {
       ],
     },
   }),
+  corner: (size = 14, color = '#94A3B8') => ({
+    type: 'svg',
+    props: {
+      width: size,
+      height: size,
+      viewBox: '0 0 24 24',
+      children: [
+        { type: 'path', props: { d: 'M6 2v12h14', stroke: color, strokeWidth: 3, strokeLinecap: 'round', strokeLinejoin: 'round', fill: 'none' } },
+      ],
+    },
+  }),
   users: (size = 18, color = '#64748B') => ({
     type: 'svg',
     props: {
@@ -599,7 +610,7 @@ export class ReportCardService {
               overflow: 'hidden',
             },
           },
-            h('div', { style: { fontSize: 14, color: '#94A3B8', fontWeight: 700, marginRight: 6 } }, '└─'),
+            h('div', { style: { display: 'flex', marginRight: 8, alignItems: 'center' } }, SVGS.corner(14, '#94A3B8')),
             h('div', {
               style: {
                 fontSize: 15,

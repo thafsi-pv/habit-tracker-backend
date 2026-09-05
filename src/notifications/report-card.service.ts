@@ -725,28 +725,49 @@ export class ReportCardService {
             }, moodConfig.msg),
           ),
 
-          // Donut Progress Ring
+          // Donut Progress Ring (SVG)
           h('div', {
             style: {
               width: 76,
               height: 76,
-              borderRadius: '50%',
-              background: `conic-gradient(#8B5CF6 ${Math.round(overallPercent * 3.6)}deg, #E2E8F0 ${Math.round(overallPercent * 3.6)}deg)`,
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
               marginRight: 24,
+              position: 'relative',
             },
           },
+            h('svg', {
+              width: 76,
+              height: 76,
+              viewBox: '0 0 76 76',
+              style: {
+                position: 'absolute',
+                transform: 'rotate(-90deg)',
+              },
+            },
+              h('circle', {
+                cx: 38,
+                cy: 38,
+                r: 30,
+                stroke: '#E2E8F0',
+                strokeWidth: 8,
+                fill: 'none',
+              }),
+              h('circle', {
+                cx: 38,
+                cy: 38,
+                r: 30,
+                stroke: '#8B5CF6',
+                strokeWidth: 8,
+                strokeDasharray: '188.5',
+                strokeDashoffset: (188.5 * (1 - overallPercent / 100)).toFixed(1),
+                strokeLinecap: 'round',
+                fill: 'none',
+              }),
+            ),
             h('div', {
               style: {
-                width: 54,
-                height: 54,
-                borderRadius: '50%',
-                background: '#FEF9C3',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
                 fontSize: 18,
                 fontWeight: 900,
                 color: '#1E293B',

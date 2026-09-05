@@ -31,7 +31,8 @@ export class DailyHabitsService {
     if (dto.completed) {
       const user = await this.prisma.user.findUnique({ where: { id: userId } });
       const habit = await this.prisma.habit.findUnique({ where: { id: habitId }, include: { tracker: true } });
-      if (user && habit && habit.tracker.notifyOnActivityUpdate) {
+      const tracker = habit?.tracker as { notifyOnActivityUpdate?: boolean } | undefined;
+      if (user && habit && tracker?.notifyOnActivityUpdate) {
         // Broadcast in the background to avoid blocking the HTTP response
         this.notificationsService.broadcastActivityCompletion(habit.trackerId, habit.name, userId, user.name).catch(() => {});
       }
@@ -61,7 +62,8 @@ export class DailyHabitsService {
         where: { id: subtaskId }, 
         include: { habit: { include: { tracker: true } } } 
       });
-      if (user && subtask && subtask.habit.tracker.notifyOnActivityUpdate) {
+      const tracker = subtask?.habit?.tracker as { notifyOnActivityUpdate?: boolean } | undefined;
+      if (user && subtask && tracker?.notifyOnActivityUpdate) {
         const activityName = `${subtask.habit.name} - ${subtask.name}`;
         this.notificationsService.broadcastActivityCompletion(subtask.habit.trackerId, activityName, userId, user.name).catch(() => {});
       }

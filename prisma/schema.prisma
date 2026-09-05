@@ -73,6 +73,7 @@ model Tracker {
   name      String
   ownerId   String
   owner     User     @relation("TrackerOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  notifyOnActivityUpdate Boolean @default(false)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

@@ -100,6 +100,14 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
 
     const record = await this.prisma.whatsAppSession.findUnique({ where: { userId } });
     if (!record) return { status: 'DISCONNECTED' };
+
+    // If the database says CONNECTING but there is no live session in memory,
+    // the backend restarted or the connection process died.
+    // Return DISCONNECTED so the frontend lets the user start over.
+    if (record.status === 'CONNECTING') {
+      return { status: 'DISCONNECTED' };
+    }
+
     return {
       status: record.status as WhatsAppStatus['status'],
       phoneNumber: record.phoneNumber,

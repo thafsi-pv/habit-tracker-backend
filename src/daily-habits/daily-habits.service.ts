@@ -3,8 +3,8 @@ import { PrismaService } from '../prisma/prisma.service';
 import { AuthorizationService } from '../common/authorization.service';
 import { SetCompletionDto } from './dto/daily-habit.dto';
 import { parseCalendarDate } from '../common/date.util';
-
 import { NotificationsService } from '../notifications/notifications.service';
+import { RedisService } from '../redis/redis.service';
 
 @Injectable()
 export class DailyHabitsService {
@@ -12,6 +12,7 @@ export class DailyHabitsService {
     private prisma: PrismaService,
     private authz: AuthorizationService,
     private notificationsService: NotificationsService,
+    private redis: RedisService,
   ) {}
 
   /**
@@ -37,6 +38,9 @@ export class DailyHabitsService {
         this.notificationsService.broadcastActivityCompletion(habit.trackerId, habit.name, userId, user.name).catch(() => {});
       }
     }
+
+    // Invalidate cached dashboard for this tracker/date
+    this.redis.delByPattern('dashboard:today:*').catch(() => {});
 
     return result;
   }
@@ -68,6 +72,9 @@ export class DailyHabitsService {
         this.notificationsService.broadcastActivityCompletion(subtask.habit.trackerId, activityName, userId, user.name).catch(() => {});
       }
     }
+
+    // Invalidate cached dashboard for this tracker/date
+    this.redis.delByPattern('dashboard:today:*').catch(() => {});
 
     return result;
   }

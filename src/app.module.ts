@@ -3,6 +3,7 @@ import { ConfigModule } from '@nestjs/config';
 // import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 // import { APP_GUARD } from '@nestjs/core';
 import { PrismaModule } from './prisma/prisma.module';
+import { RedisModule } from './redis/redis.module';
 import { CommonModule } from './common/common.module';
 import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
@@ -27,6 +28,7 @@ import { SchedulerModule } from './scheduler/scheduler.module';
     }),
     */
     PrismaModule,
+    RedisModule,
     CommonModule,
     AuthModule,
     UsersModule,

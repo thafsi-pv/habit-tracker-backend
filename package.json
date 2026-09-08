@@ -31,6 +31,7 @@
     "@nestjs/websockets": "^10.4.0",
     "@prisma/client": "^5.19.1",
     "@resvg/resvg-js": "^2.6.2",
+    "@upstash/redis": "^1.38.4",
     "@whiskeysockets/baileys": "^6.7.9",
     "argon2": "^0.40.3",
     "class-transformer": "^0.5.1",

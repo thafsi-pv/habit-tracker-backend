@@ -4,6 +4,7 @@ import { AuthorizationService } from '../common/authorization.service';
 import { ProgressService } from '../progress/progress.service';
 import { parseCalendarDate, todayInTimezone } from '../common/date.util';
 import { buildCompletedSets } from '../progress/habit-completion.util';
+import { RedisService } from '../redis/redis.service';
 
 @Injectable()
 export class DashboardService {
@@ -11,72 +12,77 @@ export class DashboardService {
     private prisma: PrismaService,
     private authz: AuthorizationService,
     private progressService: ProgressService,
+    private redis: RedisService,
   ) {}
 
   async getToday(userId: string, trackerId: string, dateStr?: string) {
     await this.authz.getMembership(userId, trackerId);
     const user = await this.prisma.user.findUniqueOrThrow({ where: { id: userId } });
     const date = dateStr ?? todayInTimezone(user.timezone);
-    const dbDate = parseCalendarDate(date);
+    const cacheKey = `dashboard:today:${userId}:${trackerId}:${date}`;
 
-    const habits = await this.prisma.habit.findMany({
-      where: { trackerId, isActive: true },
-      orderBy: { sortOrder: 'asc' },
-      include: { subtasks: { where: { isActive: true }, orderBy: { sortOrder: 'asc' } } },
+    return this.redis.wrap(cacheKey, async () => {
+      const dbDate = parseCalendarDate(date);
+
+      const habits = await this.prisma.habit.findMany({
+        where: { trackerId, isActive: true },
+        orderBy: { sortOrder: 'asc' },
+        include: { subtasks: { where: { isActive: true }, orderBy: { sortOrder: 'asc' } } },
+      });
+
+      const [habitCompletions, subtaskCompletions] = await Promise.all([
+        this.prisma.dailyHabit.findMany({ where: { date: dbDate, habit: { trackerId }, userId } }),
+        this.prisma.dailySubtaskCompletion.findMany({
+          where: { date: dbDate, subtask: { habit: { trackerId } }, userId },
+        }),
+      ]);
+
+      const { habitCompletedSet, subtaskCompletedSet } = buildCompletedSets(
+        habitCompletions,
+        subtaskCompletions,
+        userId,
+      );
+
+      // The caller's own habits are the interactive ones — shape includes
+      // per-subtask completion so the frontend can render checkboxes directly.
+      const myHabits = habits.map((h) => ({
+        id: h.id,
+        name: h.name,
+        icon: h.icon,
+        completed: habitCompletedSet.has(h.id),
+        subtasks: h.subtasks.map((s) => ({
+          id: s.id,
+          name: s.name,
+          completed: subtaskCompletedSet.has(s.id),
+        })),
+      }));
+
+      let totalItems = 0;
+      let completedItems = 0;
+
+      myHabits.forEach((h) => {
+        if (h.subtasks.length === 0) {
+          totalItems++;
+          if (h.completed) completedItems++;
+        } else {
+          totalItems += h.subtasks.length;
+          completedItems += h.subtasks.filter((s) => s.completed).length;
+        }
+      });
+
+      const groupProgress = await this.progressService.getDailyProgress(userId, trackerId, date);
+
+      return {
+        date,
+        userName: user.name,
+        myProgress: {
+          completed: completedItems,
+          total: totalItems,
+          percent: totalItems === 0 ? 0 : Math.round((completedItems / totalItems) * 100),
+        },
+        myHabits,
+        groupProgress: groupProgress.members,
+      };
     });
-
-    const [habitCompletions, subtaskCompletions] = await Promise.all([
-      this.prisma.dailyHabit.findMany({ where: { date: dbDate, habit: { trackerId }, userId } }),
-      this.prisma.dailySubtaskCompletion.findMany({
-        where: { date: dbDate, subtask: { habit: { trackerId } }, userId },
-      }),
-    ]);
-
-    const { habitCompletedSet, subtaskCompletedSet } = buildCompletedSets(
-      habitCompletions,
-      subtaskCompletions,
-      userId,
-    );
-
-    // The caller's own habits are the interactive ones — shape includes
-    // per-subtask completion so the frontend can render checkboxes directly.
-    const myHabits = habits.map((h) => ({
-      id: h.id,
-      name: h.name,
-      icon: h.icon,
-      completed: habitCompletedSet.has(h.id),
-      subtasks: h.subtasks.map((s) => ({
-        id: s.id,
-        name: s.name,
-        completed: subtaskCompletedSet.has(s.id),
-      })),
-    }));
-
-    let totalItems = 0;
-    let completedItems = 0;
-    
-    myHabits.forEach((h) => {
-      if (h.subtasks.length === 0) {
-        totalItems++;
-        if (h.completed) completedItems++;
-      } else {
-        totalItems += h.subtasks.length;
-        completedItems += h.subtasks.filter((s) => s.completed).length;
-      }
-    });
-
-    const groupProgress = await this.progressService.getDailyProgress(userId, trackerId, date);
-
-    return {
-      date,
-      userName: user.name,
-      myProgress: {
-        completed: completedItems,
-        total: totalItems,
-        percent: totalItems === 0 ? 0 : Math.round((completedItems / totalItems) * 100),
-      },
-      myHabits,
-      groupProgress: groupProgress.members,
-    };
   }
 }

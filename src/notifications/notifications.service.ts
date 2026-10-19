@@ -125,6 +125,47 @@ function buildReportMessage(params: {
   return lines.join('\n');
 }
 
+function buildGroupReportMessage(params: {
+  trackerName: string;
+  dateLabel: string;
+  members: MemberReport[];
+}): string {
+  const { trackerName, dateLabel, members } = params;
+  const totalCompleted = members.reduce((s, m) => s + m.completed, 0);
+  const totalHabits = members.reduce((s, m) => s + m.total, 0);
+  const overallPercent = totalHabits > 0 ? Math.round((totalCompleted / totalHabits) * 100) : 0;
+
+  const lines: string[] = [
+    '🌙 *Daily Habit Report*',
+    `📌 *${trackerName}*`,
+    `📅 ${dateLabel}`,
+    '',
+    `📊 *Group Progress:* ${totalCompleted}/${totalHabits} completed (${overallPercent}%)`,
+    buildProgressBar(overallPercent),
+    '',
+    '👥 *Member Breakdown:*',
+  ];
+
+  for (const m of members) {
+    const bar = buildProgressBar(m.percent);
+    const badge = m.percent === 100 ? '🌟' : m.percent >= 50 ? '⚡' : '⏳';
+    const role = m.isMaster ? ' 👑' : '';
+    lines.push(`${badge} *${m.name}*${role}: ${m.completed}/${m.total} (${m.percent}%)`);
+    lines.push(`   ${bar}`);
+  }
+
+  lines.push('');
+  if (overallPercent === 100) {
+    lines.push('🎉🎉 *Outstanding! Everyone completed 100% today!* 🎉🎉');
+  } else if (overallPercent >= 75) {
+    lines.push('💪 *Great teamwork! Keep up the momentum!*');
+  } else {
+    lines.push("🔥 *Good effort today! Let's push higher tomorrow!*");
+  }
+
+  return lines.join('\n');
+}
+
 @Injectable()
 export class NotificationsService {
   private readonly logger = new Logger(NotificationsService.name);
@@ -138,7 +179,82 @@ export class NotificationsService {
   ) {}
 
   /**
-   * Sends customized group reports to each member from the admin's WhatsApp account.
+   * Resolves or auto-creates the WhatsApp group for a given tracker.
+   * Adds all aligned members who have a WhatsApp number to the group.
+   */
+  async ensureTrackerWhatsAppGroup(trackerId: string): Promise<{ groupId: string; senderId: string } | null> {
+    const tracker = await this.prisma.tracker.findUnique({
+      where: { id: trackerId },
+      include: {
+        owner: true,
+        members: { include: { user: true } },
+      },
+    });
+    if (!tracker) return null;
+
+    // Use a central admin user for WhatsApp connection, or fallback to tracker owner
+    const adminUser = await this.prisma.user.findUnique({ where: { email: 'thafsi@example.com' } });
+    let senderId = adminUser?.id;
+    let status = senderId ? await this.whatsappService.getStatus(senderId) : null;
+
+    if (status?.status !== 'CONNECTED') {
+      const ownerStatus = await this.whatsappService.getStatus(tracker.ownerId);
+      if (ownerStatus.status === 'CONNECTED') {
+        senderId = tracker.ownerId;
+        status = ownerStatus;
+      }
+    }
+
+    if (!senderId || status?.status !== 'CONNECTED') {
+      this.logger.warn(`WhatsApp sender is not connected for tracker ${trackerId}`);
+      return null;
+    }
+
+    // Collect aligned participants (members with whatsappNumber)
+    const memberNumbers = tracker.members
+      .map((m) => m.user.whatsappNumber)
+      .filter((num): num is string => typeof num === 'string' && num.trim().length > 0);
+
+    // If tracker already has a whatsappGroupId, sync any members and return
+    if (tracker.whatsappGroupId) {
+      if (memberNumbers.length > 0) {
+        this.whatsappService.addParticipantsToGroup(senderId, tracker.whatsappGroupId, memberNumbers).catch((err) => {
+          this.logger.warn(`Could not sync participants to group ${tracker.whatsappGroupId}: ${err?.message}`);
+        });
+      }
+      return { groupId: tracker.whatsappGroupId, senderId };
+    }
+
+    // If tracker does not have a WhatsApp group yet, create one
+    if (memberNumbers.length === 0) {
+      this.logger.warn(`Cannot create WhatsApp group for tracker ${trackerId}: No members have a valid WhatsApp number`);
+      return null;
+    }
+
+    const groupName = `${tracker.name} (Habits)`;
+    this.logger.log(`Creating WhatsApp group "${groupName}" for tracker ${trackerId} with members: ${memberNumbers.join(', ')}`);
+
+    const result = await this.whatsappService.createGroup(senderId, groupName, memberNumbers);
+    if (!result.success || !result.groupId) {
+      this.logger.error(`Failed to create WhatsApp group for tracker ${trackerId}: ${result.error}`);
+      return null;
+    }
+
+    await this.prisma.tracker.update({
+      where: { id: trackerId },
+      data: {
+        whatsappGroupId: result.groupId,
+        whatsappGroupInviteLink: result.inviteLink ?? null,
+      },
+    });
+
+    this.logger.log(`Created WhatsApp group ${result.groupId} for tracker ${trackerId}`);
+    return { groupId: result.groupId, senderId };
+  }
+
+  /**
+   * Sends the consolidated daily group report card to the tracker's WhatsApp group.
+   * Does NOT send to individual personal numbers.
    */
   async sendTrackerReports(trackerId: string): Promise<void> {
     const tracker = await this.prisma.tracker.findUnique({
@@ -150,13 +266,11 @@ export class NotificationsService {
     });
     if (!tracker) return;
 
-    // Use a central admin user for the WhatsApp connection
-    const adminUser = await this.prisma.user.findUnique({ where: { email: 'thafsi@example.com' } });
-    if (!adminUser) {
-      this.logger.error('Central WhatsApp sender (thafsi@example.com) not found');
+    const groupInfo = await this.ensureTrackerWhatsAppGroup(trackerId);
+    if (!groupInfo) {
+      this.logger.warn(`Cannot send tracker report: WhatsApp group not ready for tracker ${trackerId}`);
       return;
     }
-    const senderId = adminUser.id;
 
     const masterId = tracker.ownerId;
     const masterTimezone = tracker.owner.timezone;
@@ -170,17 +284,17 @@ export class NotificationsService {
     });
 
     // Pre-fetch all members' data
-    const memberReports: Map<string, MemberReport> = new Map();
+    const memberReports: MemberReport[] = [];
     for (const member of tracker.members) {
       try {
         const dashboard = await this.dashboardService.getToday(member.user.id, trackerId, today);
         const monthly = await this.progressService.getMonthlyProgress(member.user.id, trackerId);
 
-        memberReports.set(member.user.id, {
+        memberReports.push({
           name: member.user.name,
           isMaster: member.user.id === masterId,
           habits: dashboard.myHabits.map((h) => {
-            const streak = monthly.habits.find(mh => mh.habitId === h.id)?.currentStreak ?? 0;
+            const streak = monthly.habits.find((mh) => mh.habitId === h.id)?.currentStreak ?? 0;
             return {
               name: h.name,
               icon: h.icon,
@@ -201,95 +315,145 @@ export class NotificationsService {
       }
     }
 
-    // Send personalized image report to each member with a whatsappNumber
-    for (const member of tracker.members) {
-      const user = member.user;
-      if (!user.whatsappNumber) continue;
+    if (memberReports.length === 0) return;
 
-      const currentUserReport = memberReports.get(user.id);
-      if (!currentUserReport) continue;
+    // Sort: highest completion first
+    memberReports.sort((a, b) => b.percent - a.percent);
 
-      const otherMembers = tracker.members
-        .filter(m => m.user.id !== user.id)
-        .map(m => memberReports.get(m.user.id))
-        .filter((r): r is MemberReport => !!r)
-        .sort((a, b) => b.percent - a.percent);
+    const caption = buildGroupReportMessage({
+      trackerName: tracker.name,
+      dateLabel,
+      members: memberReports,
+    });
 
-      try {
-        const image = await this.reportCardService.render({
-          trackerName: tracker.name,
-          userName: user.name,
-          dateLabel,
-          currentUser: { ...currentUserReport, isCurrentUser: true },
-          otherMembers: otherMembers.map((m) => ({ ...m, isCurrentUser: false })),
-        });
+    try {
+      const image = await this.reportCardService.render({
+        trackerName: tracker.name,
+        userName: tracker.name,
+        dateLabel,
+        currentUser: { ...memberReports[0], isCurrentUser: false },
+        otherMembers: memberReports.slice(1).map((m) => ({ ...m, isCurrentUser: false })),
+      });
 
-        const caption = `🌙 *Daily Habit Report*\n📌 ${tracker.name}\n📅 ${dateLabel}\n\nHey ${user.name} 👋\n\nYour progress: ${currentUserReport.completed}/${currentUserReport.total} (${currentUserReport.percent}%)`;
+      const log = await this.prisma.notificationLog.create({
+        data: {
+          userId: tracker.ownerId,
+          trackerId,
+          type: NotificationType.DAILY_REPORT,
+          channel: NotificationChannel.WHATSAPP,
+          status: 'PENDING',
+          message: caption,
+        },
+      });
 
-        const log = await this.prisma.notificationLog.create({
-          data: {
-            userId: user.id,
-            trackerId,
-            type: NotificationType.DAILY_REPORT,
-            channel: NotificationChannel.WHATSAPP,
-            status: 'PENDING',
-            message: caption,
-          },
-        });
+      const result = await this.whatsappService.sendImageToGroup(
+        groupInfo.senderId,
+        groupInfo.groupId,
+        image,
+        caption,
+      );
 
-        const result = await this.whatsappService.sendImageToNumber(
-          senderId,
-          user.whatsappNumber,
-          image,
-          caption,
-        );
+      await this.prisma.notificationLog.update({
+        where: { id: log.id },
+        data: {
+          status: result.success ? 'SENT' : 'FAILED',
+          sentAt: result.success ? new Date() : null,
+          error: result.error,
+        },
+      });
 
-        await this.prisma.notificationLog.update({
-          where: { id: log.id },
-          data: {
-            status: result.success ? 'SENT' : 'FAILED',
-            sentAt: result.success ? new Date() : null,
-            error: result.error,
-          },
-        });
-
-        if (!result.success) {
-          this.logger.warn(`Daily report image failed for user ${user.id} tracker ${trackerId}: ${result.error}`);
-        }
-      } catch (err) {
-        this.logger.error(`Error sending report image for member ${user.id} in tracker ${trackerId}`, err as Error);
+      if (!result.success) {
+        this.logger.warn(`Daily report image to group ${groupInfo.groupId} failed: ${result.error}`);
       }
+    } catch (err) {
+      this.logger.error(`Error sending group report image for tracker ${trackerId}`, err as Error);
     }
   }
 
-  async broadcastActivityCompletion(trackerId: string, activityName: string, completedByUserId: string, completedByUserName: string): Promise<void> {
+  /**
+   * Broadcasts activity completion directly to the tracker's WhatsApp group.
+   * Does NOT send to individual personal numbers.
+   */
+  async broadcastActivityCompletion(
+    trackerId: string,
+    activityName: string,
+    completedByUserId: string,
+    completedByUserName: string,
+  ): Promise<void> {
     const tracker = await this.prisma.tracker.findUnique({
       where: { id: trackerId },
-      include: {
-        members: { include: { user: true } },
-      },
     });
-    if (!tracker) return;
+    if (!tracker || !tracker.notifyOnActivityUpdate) return;
+
+    const groupInfo = await this.ensureTrackerWhatsAppGroup(trackerId);
+    if (!groupInfo) {
+      this.logger.warn(`Cannot broadcast activity completion: WhatsApp group not ready for tracker ${trackerId}`);
+      return;
+    }
+
+    const message = `✅ *${completedByUserName}* just completed *${activityName}* in *${tracker.name}*!`;
+
+    try {
+      const result = await this.whatsappService.sendToGroup(
+        groupInfo.senderId,
+        groupInfo.groupId,
+        message,
+      );
+
+      await this.prisma.notificationLog.create({
+        data: {
+          userId: completedByUserId,
+          trackerId,
+          type: NotificationType.ACTIVITY_COMPLETION,
+          channel: NotificationChannel.WHATSAPP,
+          status: result.success ? 'SENT' : 'FAILED',
+          sentAt: result.success ? new Date() : null,
+          message,
+          error: result.error,
+        },
+      });
+
+      if (!result.success) {
+        this.logger.warn(`Broadcast to WhatsApp group failed for tracker ${trackerId}: ${result.error}`);
+      }
+    } catch (err) {
+      this.logger.error(`Error broadcasting activity to group for tracker ${trackerId}`, err as Error);
+    }
+  }
+
+  /**
+   * Adds a member to the tracker's WhatsApp group when they join or update their number.
+   */
+  async syncMemberToTrackerGroup(trackerId: string, userWhatsappNumber?: string | null): Promise<void> {
+    if (!userWhatsappNumber) return;
+    const tracker = await this.prisma.tracker.findUnique({
+      where: { id: trackerId },
+      select: { whatsappGroupId: true, ownerId: true },
+    });
+    if (!tracker?.whatsappGroupId) return;
 
     const adminUser = await this.prisma.user.findUnique({ where: { email: 'thafsi@example.com' } });
-    if (!adminUser) return;
-    const senderId = adminUser.id;
+    const senderId = adminUser?.id ?? tracker.ownerId;
+    await this.whatsappService.addParticipantsToGroup(senderId, tracker.whatsappGroupId, [userWhatsappNumber]).catch((err) => {
+      this.logger.warn(`Could not add member to group ${tracker.whatsappGroupId}: ${err?.message}`);
+    });
+  }
 
-    for (const member of tracker.members) {
-      const user = member.user;
-      if (!user.whatsappNumber || user.id === completedByUserId) continue;
+  /**
+   * Removes a member from the tracker's WhatsApp group when they leave or are removed.
+   */
+  async removeMemberFromTrackerGroup(trackerId: string, userWhatsappNumber?: string | null): Promise<void> {
+    if (!userWhatsappNumber) return;
+    const tracker = await this.prisma.tracker.findUnique({
+      where: { id: trackerId },
+      select: { whatsappGroupId: true, ownerId: true },
+    });
+    if (!tracker?.whatsappGroupId) return;
 
-      const message = `✅ *${completedByUserName}* just completed *${activityName}* in *${tracker.name}*!`;
-
-      try {
-        await this.whatsappService.sendToNumber(
-          senderId,
-          user.whatsappNumber,
-          message
-        );
-      } catch (err) {
-        this.logger.error(`Error broadcasting activity for member ${user.id}`, err as Error);
-      }
-    }
+    const adminUser = await this.prisma.user.findUnique({ where: { email: 'thafsi@example.com' } });
+    const senderId = adminUser?.id ?? tracker.ownerId;
+    await this.whatsappService.removeParticipantsFromGroup(senderId, tracker.whatsappGroupId, [userWhatsappNumber]).catch((err) => {
+      this.logger.warn(`Could not remove member from group ${tracker.whatsappGroupId}: ${err?.message}`);
+    });
   }
 }

@@ -16,6 +16,7 @@ enum TrackerRole {
 enum NotificationType {
   DAILY_REPORT
   INVITATION
+  ACTIVITY_COMPLETION
 }
 
 enum NotificationChannel {
@@ -74,6 +75,8 @@ model Tracker {
   ownerId   String
   owner     User     @relation("TrackerOwner", fields: [ownerId], references: [id], onDelete: Cascade)
   notifyOnActivityUpdate Boolean @default(false)
+  whatsappGroupId        String?
+  whatsappGroupInviteLink String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

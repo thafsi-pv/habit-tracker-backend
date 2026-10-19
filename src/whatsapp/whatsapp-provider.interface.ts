@@ -11,6 +11,13 @@ export interface SendMessageResult {
   error?: string;
 }
 
+export interface CreateGroupResult {
+  success: boolean;
+  groupId?: string;
+  inviteLink?: string;
+  error?: string;
+}
+
 /**
  * Notification/scheduler code depends only on this interface, never on
  * Baileys directly. Swapping BaileysWhatsAppProvider for a future
@@ -28,6 +35,21 @@ export interface WhatsAppProvider {
     image: Buffer,
     caption?: string,
     mimetype?: string,
+  ): Promise<SendMessageResult>;
+  createGroup(
+    senderUserId: string,
+    groupName: string,
+    participantNumbers: string[],
+  ): Promise<CreateGroupResult>;
+  addParticipants(
+    senderUserId: string,
+    groupJid: string,
+    participantNumbers: string[],
+  ): Promise<SendMessageResult>;
+  removeParticipants(
+    senderUserId: string,
+    groupJid: string,
+    participantNumbers: string[],
   ): Promise<SendMessageResult>;
 }
 

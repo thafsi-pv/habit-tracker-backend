@@ -10,6 +10,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { usePostgresAuthState, clearAuthState } from './postgres-auth-state';
 import { WhatsAppGateway } from './whatsapp.gateway';
 import {
+  CreateGroupResult,
   SendMessageResult,
   WhatsAppProvider,
   WhatsAppStatus,
@@ -146,6 +147,105 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
       return { success: true };
     } catch (err) {
       this.logger.error(`Failed to send WhatsApp image to user ${userId}`, err as Error);
+      return { success: false, error: (err as Error).message };
+    }
+  }
+
+  async createGroup(
+    senderUserId: string,
+    groupName: string,
+    participantNumbers: string[],
+  ): Promise<CreateGroupResult> {
+    const session = await this.ensureConnected(senderUserId);
+    if (!session) return { success: false, error: 'WhatsApp is not connected' };
+
+    try {
+      const myNumber = session.user?.id?.split(':')[0]?.replace(/\D/g, '') ?? '';
+      const participantJids = participantNumbers
+        .map((num) => num.replace(/\D/g, ''))
+        .filter((clean) => clean && clean !== myNumber)
+        .map((clean) => `${clean}@s.whatsapp.net`);
+
+      const uniqueJids = Array.from(new Set(participantJids));
+      if (uniqueJids.length === 0) {
+        return {
+          success: false,
+          error: 'At least one participant with a WhatsApp number is required to create a group',
+        };
+      }
+
+      // WhatsApp group titles must be max 100 chars
+      const trimmedTitle = groupName.slice(0, 100);
+      const group = await session.groupCreate(trimmedTitle, uniqueJids);
+
+      let inviteLink: string | undefined;
+      try {
+        const code = await session.groupInviteCode(group.id);
+        if (code) {
+          inviteLink = `https://chat.whatsapp.com/${code}`;
+        }
+      } catch (e) {
+        this.logger.warn(`Could not get invite code for group ${group.id}: ${(e as Error).message}`);
+      }
+
+      return {
+        success: true,
+        groupId: group.id,
+        inviteLink,
+      };
+    } catch (err) {
+      this.logger.error(`Failed to create WhatsApp group "${groupName}"`, err as Error);
+      return { success: false, error: (err as Error).message };
+    }
+  }
+
+  async addParticipants(
+    senderUserId: string,
+    groupJid: string,
+    participantNumbers: string[],
+  ): Promise<SendMessageResult> {
+    const session = await this.ensureConnected(senderUserId);
+    if (!session) return { success: false, error: 'WhatsApp is not connected' };
+
+    try {
+      const myNumber = session.user?.id?.split(':')[0]?.replace(/\D/g, '') ?? '';
+      const participantJids = participantNumbers
+        .map((num) => num.replace(/\D/g, ''))
+        .filter((clean) => clean && clean !== myNumber)
+        .map((clean) => `${clean}@s.whatsapp.net`);
+
+      const uniqueJids = Array.from(new Set(participantJids));
+      if (uniqueJids.length === 0) return { success: true };
+
+      await session.groupParticipantsUpdate(groupJid, uniqueJids, 'add');
+      return { success: true };
+    } catch (err) {
+      this.logger.error(`Failed to add participants to WhatsApp group ${groupJid}`, err as Error);
+      return { success: false, error: (err as Error).message };
+    }
+  }
+
+  async removeParticipants(
+    senderUserId: string,
+    groupJid: string,
+    participantNumbers: string[],
+  ): Promise<SendMessageResult> {
+    const session = await this.ensureConnected(senderUserId);
+    if (!session) return { success: false, error: 'WhatsApp is not connected' };
+
+    try {
+      const participantJids = participantNumbers
+        .map((num) => num.replace(/\D/g, ''))
+        .filter(Boolean)
+        .map((clean) => `${clean}@s.whatsapp.net`);
+
+      const uniqueJids = Array.from(new Set(participantJids));
+      if (uniqueJids.length === 0) return { success: true };
+
+      await session.groupParticipantsUpdate(groupJid, uniqueJids, 'remove');
+      return { success: true };
+    } catch (err) {
+      this.logger.error(`Failed to remove participants from WhatsApp group ${groupJid}`, err as Error);
       return { success: false, error: (err as Error).message };
     }
   }

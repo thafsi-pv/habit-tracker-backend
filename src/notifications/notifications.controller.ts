@@ -17,4 +17,15 @@ export class NotificationsController {
     await this.notificationsService.sendTrackerReports(trackerId);
     return { success: true };
   }
+
+  @Roles(TrackerRole.MASTER)
+  @UseGuards(TrackerMemberGuard)
+  @Post(':trackerId/sync-whatsapp-group')
+  async syncWhatsAppGroup(@Param('trackerId') trackerId: string) {
+    const result = await this.notificationsService.ensureTrackerWhatsAppGroup(trackerId);
+    return {
+      success: !!result,
+      groupId: result?.groupId,
+    };
+  }
 }

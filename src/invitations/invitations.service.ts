@@ -11,6 +11,7 @@ import * as crypto from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { EmailService } from './email.service';
 import { CreateInvitationDto } from './dto/invitation.dto';
+import { NotificationsService } from '../notifications/notifications.service';
 
 const INVITATION_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 
@@ -27,6 +28,7 @@ export class InvitationsService {
   constructor(
     private prisma: PrismaService,
     private emailService: EmailService,
+    private notificationsService: NotificationsService,
   ) {}
 
   // Caller's MASTER membership is already verified by TrackerMemberGuard.
@@ -124,7 +126,7 @@ export class InvitationsService {
   async accept(userId: string, invitationId: string) {
     const invitation = await this.assertAcceptable(invitationId, userId);
 
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       const existingMember = await tx.trackerMember.findUnique({
         where: { trackerId_userId: { trackerId: invitation.trackerId, userId } },
       });
@@ -138,6 +140,16 @@ export class InvitationsService {
       await tx.invitation.update({ where: { id: invitation.id }, data: { acceptedAt: new Date() } });
       return member;
     });
+
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { whatsappNumber: true },
+    });
+    if (user?.whatsappNumber) {
+      this.notificationsService.syncMemberToTrackerGroup(invitation.trackerId, user.whatsappNumber).catch(() => {});
+    }
+
+    return result;
   }
 
   /** Accept via the emailed token instead of an authenticated invitationId lookup. */
